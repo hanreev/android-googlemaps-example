@@ -2,7 +2,6 @@ package com.example.navdrawer;
 
 import android.content.Intent;
 import android.os.Bundle;
-import android.util.Log;
 import android.view.Menu;
 
 import androidx.annotation.Nullable;
@@ -22,7 +21,9 @@ public class MainActivity extends AppCompatActivity {
     private static int LOGIN_REQUEST_CODE = 212;
 
     private AppBarConfiguration mAppBarConfiguration;
-    private boolean mLoggedIn = false;
+
+    // TODO: Handle authentication
+    private boolean mLoggedIn = true;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {

@@ -3,52 +3,54 @@ package com.example.navdrawer.ui.home;
 import android.Manifest;
 import android.content.Context;
 import android.content.pm.PackageManager;
-import android.graphics.Bitmap;
-import android.graphics.Canvas;
-import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ImageButton;
+import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
+import androidx.core.widget.NestedScrollView;
 import androidx.fragment.app.Fragment;
 
+import com.android.volley.Cache;
+import com.android.volley.NetworkResponse;
+import com.android.volley.ParseError;
 import com.android.volley.RequestQueue;
 import com.android.volley.Response;
 import com.android.volley.VolleyError;
+import com.android.volley.toolbox.HttpHeaderParser;
 import com.android.volley.toolbox.JsonObjectRequest;
 import com.android.volley.toolbox.Volley;
 import com.example.navdrawer.R;
-import com.example.navdrawer.lib.BasicClusterItem;
-import com.example.navdrawer.lib.BasicClusterRenderer;
+import com.example.navdrawer.lib.ExpandableListView;
+import com.example.navdrawer.lib.FeatureInfoAdapter;
+import com.example.navdrawer.lib.GeoJsonParser;
+import com.example.navdrawer.lib.Utils;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.OnMapReadyCallback;
 import com.google.android.gms.maps.SupportMapFragment;
 import com.google.android.gms.maps.UiSettings;
-import com.google.android.gms.maps.model.BitmapDescriptor;
-import com.google.android.gms.maps.model.BitmapDescriptorFactory;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.LatLngBounds;
-import com.google.maps.android.clustering.ClusterManager;
+import com.google.android.material.bottomsheet.BottomSheetBehavior;
 import com.google.maps.android.data.Feature;
 import com.google.maps.android.data.Layer;
 import com.google.maps.android.data.geojson.GeoJsonFeature;
 import com.google.maps.android.data.geojson.GeoJsonLayer;
 import com.google.maps.android.data.geojson.GeoJsonLineStringStyle;
-import com.google.maps.android.data.geojson.GeoJsonPoint;
 import com.google.maps.android.data.geojson.GeoJsonPointStyle;
 
 import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.Locale;
 
 public class HomeFragment extends Fragment implements OnMapReadyCallback {
     private static String TAG = HomeFragment.class.getSimpleName();
@@ -62,11 +64,17 @@ public class HomeFragment extends Fragment implements OnMapReadyCallback {
             new LatLng(-3.2701076399999351, 139.2974821700000803)
     );
 
+    private View mRootView;
     private RequestQueue mRequestQueue;
+    private BottomSheetBehavior<NestedScrollView> mInfoBehavior;
+    private ExpandableListView mInfoListView;
+    private TextView mInfoTitle;
+
+    private GeoJsonLayer mLayer;
 
     public View onCreateView(@NonNull LayoutInflater inflater,
                              ViewGroup container, Bundle savedInstanceState) {
-        View root = inflater.inflate(R.layout.fragment_home, container, false);
+        mRootView = inflater.inflate(R.layout.fragment_home, container, false);
 
         mContext = requireActivity().getApplicationContext();
         mRequestQueue = Volley.newRequestQueue(mContext);
@@ -75,7 +83,9 @@ public class HomeFragment extends Fragment implements OnMapReadyCallback {
         assert mapFragment != null;
         mapFragment.getMapAsync(this);
 
-        return root;
+        setupFeatureInfo();
+
+        return mRootView;
     }
 
     @Override
@@ -88,8 +98,12 @@ public class HomeFragment extends Fragment implements OnMapReadyCallback {
         uiSettings.setMapToolbarEnabled(false);
 
         mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(mBounds.getCenter(), 9));
+        mMap.setOnMarkerClickListener(null);
 
-        setupGeoJsonLayer();
+        // setupGeoJsonLayer();
+        fetchGeoJson("jalan");
+        fetchGeoJson("jembatan");
+
         enableMyLocation();
     }
 
@@ -110,97 +124,57 @@ public class HomeFragment extends Fragment implements OnMapReadyCallback {
     }
 
     private void setupGeoJsonLayer() {
-        if (mMap == null) return;
-
         try {
-            GeoJsonLayer layerJalan = new GeoJsonLayer(mMap, R.raw.jalan, mContext);
+            JSONObject jalanGeoJson = Utils.createJsonFileObject(getResources().openRawResource(R.raw.jalan));
+            createGeoJsonLayer("jalan", jalanGeoJson);
 
-            GeoJsonLineStringStyle styleJalan = new GeoJsonLineStringStyle();
-            styleJalan.setColor(mContext.getColor(android.R.color.holo_red_light));
-            styleJalan.setWidth(8f);
-
-            for (GeoJsonFeature feature : layerJalan.getFeatures()) {
-                feature.setLineStringStyle(styleJalan);
-            }
-
-            layerJalan.addLayerToMap();
-
-            GeoJsonLayer layerJembatan = new GeoJsonLayer(mMap, R.raw.jembatan, mContext);
-
-            ClusterManager<BasicClusterItem> clusterManager = new ClusterManager<>(mContext, mMap);
-            BasicClusterRenderer clusterRenderer = new BasicClusterRenderer(mContext, mMap, clusterManager);
-            clusterRenderer.setIcon(bitmapFromDrawable(R.drawable.ic_jembatan_24));
-            clusterManager.setRenderer(clusterRenderer);
-
-            GeoJsonPointStyle styleJembatan = new GeoJsonPointStyle();
-            styleJembatan.setIcon(bitmapFromDrawable(R.drawable.ic_jembatan_24));
-
-            for (GeoJsonFeature feature : layerJembatan.getFeatures()) {
-                feature.setPointStyle(styleJembatan);
-                GeoJsonPoint geom = (GeoJsonPoint) feature.getGeometry();
-                clusterManager.addItem(new BasicClusterItem(geom.getCoordinates(), null, null));
-            }
-            mMap.setOnCameraIdleListener(clusterManager);
-
-            layerJembatan.setOnFeatureClickListener(new Layer.OnFeatureClickListener() {
-                @Override
-                public void onFeatureClick(Feature feature) {
-                    HashMap<String, String> properties = new LinkedHashMap<>();
-                    for (String key : feature.getPropertyKeys()) {
-                        properties.put(key, feature.getProperty(key));
-                    }
-                    Log.e(TAG, properties.toString());
-                }
-            });
+            JSONObject jembatanGeoJson = Utils.createJsonFileObject(getResources().openRawResource(R.raw.jembatan));
+            createGeoJsonLayer("jembatan", jembatanGeoJson);
         } catch (IOException | JSONException e) {
             e.printStackTrace();
         }
     }
 
-    private BitmapDescriptor bitmapFromDrawable(int drawableId) {
-        Drawable drawable = mContext.getDrawable(drawableId);
-        if (drawable == null)
-            return null;
-        Canvas canvas = new Canvas();
-        int width = drawable.getIntrinsicWidth();
-        int height = drawable.getIntrinsicHeight();
-        Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
-        canvas.setBitmap(bitmap);
-        drawable.setBounds(0, 0, width, height);
-        drawable.draw(canvas);
-        return BitmapDescriptorFactory.fromBitmap(bitmap);
-    }
-
     private void createGeoJsonLayer(String layerName, JSONObject jsonObject) {
-        GeoJsonLayer layer = new GeoJsonLayer(mMap, jsonObject);
+        if (mLayer == null) {
+            mLayer = new GeoJsonLayer(mMap, new JSONObject());
+            mLayer.addLayerToMap();
+            mLayer.setOnFeatureClickListener(new Layer.OnFeatureClickListener() {
+                @Override
+                public void onFeatureClick(Feature feature) {
+                    showFeatureInfo((GeoJsonFeature) feature);
+                }
+            });
+        }
+
+        GeoJsonParser parser = new GeoJsonParser(jsonObject);
 
         if (layerName.equals("jembatan")) {
-            ClusterManager<BasicClusterItem> clusterManager = new ClusterManager(mContext, mMap);
-            BasicClusterRenderer clusterRenderer = new BasicClusterRenderer(mContext, mMap, clusterManager);
-            clusterRenderer.setIcon(bitmapFromDrawable(R.drawable.ic_jembatan_24));
-            clusterManager.setRenderer(clusterRenderer);
+            GeoJsonPointStyle styleJembatan = new GeoJsonPointStyle();
+            styleJembatan.setIcon(Utils.bitmapFromDrawable(mContext, R.drawable.ic_jembatan_24));
 
-            for (GeoJsonFeature feature : layer.getFeatures()) {
-                GeoJsonPoint geom = (GeoJsonPoint) feature.getGeometry();
-                clusterManager.addItem(new BasicClusterItem(geom.getCoordinates(), null, null));
+            for (GeoJsonFeature feature : parser.getFeatures()) {
+                feature.setPointStyle(styleJembatan);
+                mLayer.addFeature(feature);
             }
-
-            mMap.setOnCameraIdleListener(clusterManager);
         } else if (layerName.equals("jalan")) {
             GeoJsonLineStringStyle styleJalan = new GeoJsonLineStringStyle();
             styleJalan.setColor(mContext.getColor(android.R.color.holo_red_light));
             styleJalan.setWidth(8f);
 
-            for (GeoJsonFeature feature : layer.getFeatures()) {
+            for (GeoJsonFeature feature : parser.getFeatures()) {
                 feature.setLineStringStyle(styleJalan);
+                mLayer.addFeature(feature);
             }
-
-            layer.addLayerToMap();
+        } else {
+            for (GeoJsonFeature feature : parser.getFeatures()) {
+                mLayer.addFeature(feature);
+            }
         }
     }
 
-    private void fetchGeojson(final String layerName) {
-        String url = String.format(Locale.ENGLISH, "http://10.0.2.2:8080/%s.geojson", layerName);
+    private void fetchGeoJson(final String layerName) {
+        String url = "http://10.0.2.2:8080/service.php?action=getGeojson&geojsonTable=" + layerName;
 
         JsonObjectRequest request = new JsonObjectRequest(
                 url,
@@ -209,7 +183,6 @@ public class HomeFragment extends Fragment implements OnMapReadyCallback {
                     @Override
                     public void onResponse(JSONObject response) {
                         createGeoJsonLayer(layerName, response);
-                        // Log.e("GEOJSON", response.toString());
                     }
                 },
                 new Response.ErrorListener() {
@@ -217,9 +190,64 @@ public class HomeFragment extends Fragment implements OnMapReadyCallback {
                     public void onErrorResponse(VolleyError error) {
                         Log.e(TAG, error.getMessage(), error);
                     }
-                });
+                }) {
+            @Override
+            protected Response<JSONObject> parseNetworkResponse(NetworkResponse response) {
+                try {
+                    // Cache the response
+                    long refreshInterval = 3 * 60 * 1000; // Refresh every 3 minutes.
+                    long expiredIn = 24 * 60 * 60 * 1000; // Invalidate the cache after 24 hours
+                    Cache.Entry cacheEntry = Utils.getCacheEntry(response, refreshInterval, expiredIn);
+
+                    String jsonString = new String(response.data, HttpHeaderParser.parseCharset(response.headers, PROTOCOL_CHARSET));
+                    return Response.success(new JSONObject(jsonString), cacheEntry);
+                } catch (UnsupportedEncodingException e) {
+                    return Response.error(new ParseError(e));
+                } catch (JSONException je) {
+                    return Response.error(new ParseError(je));
+                }
+            }
+        };
 
         request.setTag(TAG);
         mRequestQueue.add(request);
+    }
+
+    private void setupFeatureInfo() {
+        NestedScrollView infoContainer = mRootView.findViewById(R.id.feature_info_container);
+        mInfoListView = infoContainer.findViewById(R.id.info_list);
+        mInfoTitle = infoContainer.findViewById(R.id.info_title);
+
+        // Setup bottom sheet
+        mInfoBehavior = BottomSheetBehavior.from(infoContainer);
+        mInfoBehavior.setState(BottomSheetBehavior.STATE_HIDDEN);
+
+        // Setup close button
+        ImageButton closeButton = infoContainer.findViewById(R.id.btn_close);
+        closeButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                mInfoBehavior.setState(BottomSheetBehavior.STATE_HIDDEN);
+            }
+        });
+    }
+
+    private void showFeatureInfo(GeoJsonFeature feature) {
+        // Transform feature properties into HashMap
+        HashMap<String, String> properties = new HashMap<>();
+        for (String key : feature.getPropertyKeys())
+            properties.put(key.toUpperCase(), feature.getProperty(key)); // Transform key to upper case
+
+        // Set the title
+        String title = feature.getProperty("title");
+        if (title != null)
+            mInfoTitle.setText(title);
+
+        // Setup list view adapter
+        FeatureInfoAdapter adapter = new FeatureInfoAdapter(mContext, properties);
+        mInfoListView.setAdapter(adapter);
+
+        // Show bottom sheet
+        mInfoBehavior.setState(BottomSheetBehavior.STATE_EXPANDED);
     }
 }
