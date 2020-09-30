@@ -30,7 +30,6 @@ import androidx.core.app.ActivityCompat;
 import androidx.core.widget.NestedScrollView;
 import androidx.fragment.app.Fragment;
 
-import com.android.volley.AuthFailureError;
 import com.android.volley.Cache;
 import com.android.volley.NetworkResponse;
 import com.android.volley.ParseError;
@@ -418,6 +417,7 @@ public class HomeFragment extends Fragment implements OnMapReadyCallback {
     private void addLaporan() {
         if (mFormLaporanContentLayout == null) return;
 
+        mFormLaporanContentLayout.setEnabled(true);
         clearFormLaporan();
 
         // Set to current location
@@ -490,24 +490,25 @@ public class HomeFragment extends Fragment implements OnMapReadyCallback {
         KmpMultipartRequest request = new KmpMultipartRequest("http://10.0.2.2:8080/service.php?action=inputKerusakan", new Response.Listener<NetworkResponse>() {
             @Override
             public void onResponse(NetworkResponse response) {
-                // TODO: Handle response data
-                String responseString = new String(response.data, StandardCharsets.UTF_8);
-                Log.e(TAG, responseString);
-
+                mFormLaporanContentLayout.setEnabled(true);
                 Toast.makeText(mContext, "Laporan berhasil dibuat", Toast.LENGTH_SHORT).show();
                 clearFormLaporan();
                 mFormLaporanBehavior.setState(BottomSheetBehavior.STATE_HIDDEN);
+
+                // TODO: Handle response data
+                String responseString = new String(response.data, StandardCharsets.UTF_8);
+                Log.e(TAG, responseString);
             }
         }, new Response.ErrorListener() {
             @Override
             public void onErrorResponse(VolleyError error) {
+                mFormLaporanContentLayout.setEnabled(true);
                 Log.e(TAG, new String(error.networkResponse.data), error);
-
                 Toast.makeText(mContext, "ERROR: " + error.getMessage(), Toast.LENGTH_LONG).show();
             }
         }) {
             @Override
-            protected Map<String, String> getParams() throws AuthFailureError {
+            protected Map<String, String> getParams() {
                 HashMap<String, String> params = new HashMap<>();
                 params.put("kondisi", kondisi);
                 params.put("keterangan", keterangan);
@@ -527,12 +528,16 @@ public class HomeFragment extends Fragment implements OnMapReadyCallback {
             protected Map<String, DataPart> getDataParams() {
                 HashMap<String, DataPart> dataParams = new HashMap<>();
                 if (mFormLaporanImage != null) {
-                    dataParams.put("gambar", KmpMultipartRequest.newDataFromBitmap(String.format("%s.png", System.currentTimeMillis()), mFormLaporanImage));
+                    String filename = String.format("%s.png", System.currentTimeMillis());
+                    DataPart dataPart = KmpMultipartRequest.newDataFromBitmap(filename, mFormLaporanImage);
+                    dataParams.put("gambar", dataPart);
                 }
                 return dataParams;
             }
         };
 
+        Toast.makeText(mContext, "Memproses laporan", Toast.LENGTH_SHORT).show();
+        mFormLaporanContentLayout.setEnabled(false);
         mRequestQueue.add(request);
     }
 
