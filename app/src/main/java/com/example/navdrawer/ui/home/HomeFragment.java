@@ -1,21 +1,36 @@
 package com.example.navdrawer.ui.home;
 
 import android.Manifest;
+import android.content.ContentResolver;
 import android.content.Context;
+import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
+import android.graphics.ImageDecoder;
+import android.location.Location;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.provider.MediaStore;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.Button;
+import android.widget.EditText;
 import android.widget.ImageButton;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.core.app.ActivityCompat;
 import androidx.core.widget.NestedScrollView;
 import androidx.fragment.app.Fragment;
 
+import com.android.volley.AuthFailureError;
 import com.android.volley.Cache;
 import com.android.volley.NetworkResponse;
 import com.android.volley.ParseError;
@@ -29,7 +44,13 @@ import com.example.navdrawer.R;
 import com.example.navdrawer.lib.ExpandableListView;
 import com.example.navdrawer.lib.FeatureInfoAdapter;
 import com.example.navdrawer.lib.GeoJsonParser;
+import com.example.navdrawer.lib.KmpMultipartRequest;
 import com.example.navdrawer.lib.Utils;
+import com.google.android.gms.location.FusedLocationProviderClient;
+import com.google.android.gms.location.LocationCallback;
+import com.google.android.gms.location.LocationRequest;
+import com.google.android.gms.location.LocationResult;
+import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.OnMapReadyCallback;
@@ -38,6 +59,8 @@ import com.google.android.gms.maps.UiSettings;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.LatLngBounds;
 import com.google.android.material.bottomsheet.BottomSheetBehavior;
+import com.google.android.material.floatingactionbutton.FloatingActionButton;
+import com.google.android.material.textfield.TextInputLayout;
 import com.google.maps.android.data.Feature;
 import com.google.maps.android.data.Layer;
 import com.google.maps.android.data.geojson.GeoJsonFeature;
@@ -50,11 +73,17 @@ import org.json.JSONObject;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
+import java.util.Map;
 
 public class HomeFragment extends Fragment implements OnMapReadyCallback {
     private static String TAG = HomeFragment.class.getSimpleName();
     private static int PERMISSION_CODE_ACCESS_FINE_LOCATION = 212;
+    private static int PERMISSION_CODE_ACCESS_CAMERA = 213;
+    private static int PERMISSION_CODE_READ_EXTERNAL_STORAGE = 213;
+    private static int REQUEST_CODE_TAKE_PHOTO = 11;
+    private static int REQUEST_CODE_PICK_IMAGE = 12;
 
     private Context mContext;
     private GoogleMap mMap;
@@ -70,7 +99,13 @@ public class HomeFragment extends Fragment implements OnMapReadyCallback {
     private ExpandableListView mInfoListView;
     private TextView mInfoTitle;
 
+    private BottomSheetBehavior<NestedScrollView> mFormLaporanBehavior;
+    private LinearLayout mFormLaporanContentLayout;
+    private Bitmap mFormLaporanImage;
+    private ImageView mFormLaporanImagePreview;
+
     private GeoJsonLayer mLayer;
+    private FusedLocationProviderClient mFusedLocationProviderClient;
 
     public View onCreateView(@NonNull LayoutInflater inflater,
                              ViewGroup container, Bundle savedInstanceState) {
@@ -84,6 +119,15 @@ public class HomeFragment extends Fragment implements OnMapReadyCallback {
         mapFragment.getMapAsync(this);
 
         setupFeatureInfo();
+        setupFormLaporan();
+
+        FloatingActionButton fabLaporan = mRootView.findViewById(R.id.fab_laporan);
+        fabLaporan.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                addLaporan();
+            }
+        });
 
         return mRootView;
     }
@@ -118,8 +162,46 @@ public class HomeFragment extends Fragment implements OnMapReadyCallback {
 
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
-        if (requestCode == PERMISSION_CODE_ACCESS_FINE_LOCATION) {
-            if (grantResults[0] != -1) enableMyLocation();
+        if (requestCode == PERMISSION_CODE_ACCESS_FINE_LOCATION && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            enableMyLocation();
+        }
+
+        if (requestCode == PERMISSION_CODE_ACCESS_CAMERA && grantResults.length == 2 && grantResults[0] == PackageManager.PERMISSION_GRANTED && grantResults[1] == PackageManager.PERMISSION_GRANTED) {
+            dispatchTakePhoto();
+        }
+
+        if (requestCode == PERMISSION_CODE_READ_EXTERNAL_STORAGE && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            dispatchPickImage();
+        }
+    }
+
+    @Override
+    public void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
+        if (requestCode == REQUEST_CODE_TAKE_PHOTO || requestCode == REQUEST_CODE_PICK_IMAGE) {
+            mFormLaporanImage = null;
+        }
+
+        if (requestCode == REQUEST_CODE_TAKE_PHOTO && data != null) {
+            mFormLaporanImage = (Bitmap) data.getExtras().get("data");
+        }
+
+        if (requestCode == REQUEST_CODE_PICK_IMAGE && data != null) {
+            Uri imageUri = data.getData();
+            ContentResolver contentResolver = mContext.getContentResolver();
+            try {
+                if (Build.VERSION.SDK_INT < 28) {
+                    mFormLaporanImage = MediaStore.Images.Media.getBitmap(contentResolver, imageUri);
+                } else {
+                    ImageDecoder.Source source = ImageDecoder.createSource(contentResolver, imageUri);
+                    mFormLaporanImage = ImageDecoder.decodeBitmap(source);
+                }
+            } catch (IOException e) {
+                Log.e(TAG, e.getMessage(), e);
+            }
+        }
+
+        if (mFormLaporanImagePreview != null) {
+            mFormLaporanImagePreview.setImageBitmap(mFormLaporanImage);
         }
     }
 
@@ -250,4 +332,208 @@ public class HomeFragment extends Fragment implements OnMapReadyCallback {
         // Show bottom sheet
         mInfoBehavior.setState(BottomSheetBehavior.STATE_EXPANDED);
     }
+
+    private void setupFormLaporan() {
+        NestedScrollView formContainer = mRootView.findViewById(R.id.form_laporan_container);
+        mFormLaporanContentLayout = formContainer.findViewById(R.id.content_layout);
+        mFormLaporanImagePreview = formContainer.findViewById(R.id.image_preview);
+
+        // Setup bottom sheet
+        mFormLaporanBehavior = BottomSheetBehavior.from(formContainer);
+        mFormLaporanBehavior.setState(BottomSheetBehavior.STATE_HIDDEN);
+
+        // Setup close button
+        ImageButton closeButton = formContainer.findViewById(R.id.btn_close);
+        closeButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                mFormLaporanBehavior.setState(BottomSheetBehavior.STATE_HIDDEN);
+            }
+        });
+
+        ImageButton btnLokasi = formContainer.findViewById(R.id.btn_lokasi);
+        final EditText lokasiEditText = formContainer.findViewById(R.id.lokasi);
+
+        final LocationRequest locationRequest = new LocationRequest();
+        locationRequest.setInterval(500);
+        locationRequest.setFastestInterval(500);
+        locationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
+        locationRequest.setExpirationDuration(5000);
+
+        final LocationCallback locationCallback = new LocationCallback() {
+            @Override
+            public void onLocationResult(LocationResult locationResult) {
+                Location location = locationResult.getLastLocation();
+                lokasiEditText.setText(String.format("%s, %s", location.getLatitude(), location.getLongitude()));
+            }
+        };
+
+        btnLokasi.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                requestLocation(locationRequest, locationCallback);
+            }
+        });
+
+        ImageButton btnTakePhoto = formContainer.findViewById(R.id.btn_take_photo);
+        btnTakePhoto.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                takePhoto();
+            }
+        });
+
+        ImageButton btnPickImage = formContainer.findViewById(R.id.btn_pick_image);
+        btnPickImage.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                pickImage();
+            }
+        });
+
+        Button btnSubmit = formContainer.findViewById(R.id.btn_submit);
+        btnSubmit.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                submitForm();
+            }
+        });
+    }
+
+    private void clearFormLaporan() {
+        if (mFormLaporanContentLayout == null) return;
+
+        // Clear form
+        EditText kondisiEditText = mFormLaporanContentLayout.findViewById(R.id.kondisi);
+        EditText keteranganEditText = mFormLaporanContentLayout.findViewById(R.id.keterangan);
+        EditText lokasiEditText = mFormLaporanContentLayout.findViewById(R.id.lokasi);
+
+        kondisiEditText.setText(null);
+        keteranganEditText.setText(null);
+        lokasiEditText.setText(null);
+        mFormLaporanImagePreview.setImageBitmap(null);
+        mFormLaporanImage = null;
+    }
+
+    private void addLaporan() {
+        if (mFormLaporanContentLayout == null) return;
+
+        clearFormLaporan();
+
+        // Set to current location
+        EditText lokasiEditText = mFormLaporanContentLayout.findViewById(R.id.lokasi);
+        LatLng position = mMap.getCameraPosition().target;
+        lokasiEditText.setText(String.format("%s, %s", position.latitude, position.longitude));
+
+        mFormLaporanBehavior.setState(BottomSheetBehavior.STATE_EXPANDED);
+    }
+
+    private void takePhoto() {
+        if (ActivityCompat.checkSelfPermission(mContext, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED ||
+                ActivityCompat.checkSelfPermission(mContext, Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(new String[]{Manifest.permission.CAMERA, Manifest.permission.READ_EXTERNAL_STORAGE}, PERMISSION_CODE_ACCESS_CAMERA);
+        } else {
+            dispatchTakePhoto();
+        }
+    }
+
+    private void pickImage() {
+        if (ActivityCompat.checkSelfPermission(mContext, Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.READ_EXTERNAL_STORAGE}, PERMISSION_CODE_READ_EXTERNAL_STORAGE);
+        } else {
+            dispatchPickImage();
+        }
+    }
+
+    private void dispatchTakePhoto() {
+        Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+        startActivityForResult(intent, REQUEST_CODE_TAKE_PHOTO);
+    }
+
+    private void dispatchPickImage() {
+        Intent intent = new Intent(Intent.ACTION_PICK);
+        intent.setDataAndType(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, "image/*");
+        startActivityForResult(intent, REQUEST_CODE_PICK_IMAGE);
+    }
+
+    private void requestLocation(LocationRequest request, LocationCallback callback) {
+        if (ActivityCompat.checkSelfPermission(mContext, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, PERMISSION_CODE_ACCESS_FINE_LOCATION);
+            return;
+        }
+
+        if (mFusedLocationProviderClient == null) {
+            mFusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(mContext);
+        }
+
+        mFusedLocationProviderClient.requestLocationUpdates(request, callback, null);
+    }
+
+    private void submitForm() {
+        TextInputLayout kondisiLayout = mFormLaporanContentLayout.findViewById(R.id.layout_kondisi);
+
+        final EditText kondisiEditText = mFormLaporanContentLayout.findViewById(R.id.kondisi);
+        EditText keteranganEditText = mFormLaporanContentLayout.findViewById(R.id.keterangan);
+        EditText lokasiEditText = mFormLaporanContentLayout.findViewById(R.id.lokasi);
+
+        final String kondisi = kondisiEditText.getText().toString();
+        final String keterangan = keteranganEditText.getText().toString();
+        final String lokasi = lokasiEditText.getText().toString();
+
+        kondisiLayout.setError(null);
+        if (kondisi.isEmpty()) {
+            kondisiLayout.setError("Kolom kondisi harus diisi");
+            return;
+        }
+
+        KmpMultipartRequest request = new KmpMultipartRequest("http://10.0.2.2:8080/service.php?action=inputKerusakan", new Response.Listener<NetworkResponse>() {
+            @Override
+            public void onResponse(NetworkResponse response) {
+                // TODO: Handle response data
+                String responseString = new String(response.data, StandardCharsets.UTF_8);
+                Log.e(TAG, responseString);
+
+                Toast.makeText(mContext, "Laporan berhasil dibuat", Toast.LENGTH_SHORT).show();
+                clearFormLaporan();
+                mFormLaporanBehavior.setState(BottomSheetBehavior.STATE_HIDDEN);
+            }
+        }, new Response.ErrorListener() {
+            @Override
+            public void onErrorResponse(VolleyError error) {
+                Log.e(TAG, new String(error.networkResponse.data), error);
+
+                Toast.makeText(mContext, "ERROR: " + error.getMessage(), Toast.LENGTH_LONG).show();
+            }
+        }) {
+            @Override
+            protected Map<String, String> getParams() throws AuthFailureError {
+                HashMap<String, String> params = new HashMap<>();
+                params.put("kondisi", kondisi);
+                params.put("keterangan", keterangan);
+                params.put("kondisi", kondisi);
+
+                // Split latitude and longitude
+                String[] lokasiParts = lokasi.split(", ?");
+                if (lokasiParts.length == 2) {
+                    params.put("lat", lokasiParts[0]);
+                    params.put("long", lokasiParts[1]);
+                }
+
+                return params;
+            }
+
+            @Override
+            protected Map<String, DataPart> getDataParams() {
+                HashMap<String, DataPart> dataParams = new HashMap<>();
+                if (mFormLaporanImage != null) {
+                    dataParams.put("gambar", KmpMultipartRequest.newDataFromBitmap(String.format("%s.png", System.currentTimeMillis()), mFormLaporanImage));
+                }
+                return dataParams;
+            }
+        };
+
+        mRequestQueue.add(request);
+    }
+
 }
