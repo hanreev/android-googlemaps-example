@@ -32,7 +32,7 @@
             android:tint="@android:color/white" />
     </RelativeLayout>
 
-    <com.example.navdrawer.lib.ExpandableListView
+    <com.example.gmaps.lib.ExpandableListView
         android:id="@+id/info_list"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />

@@ -16,6 +16,7 @@
         android:backgroundTint="@color/colorPrimaryDark"
         android:clickable="true"
         android:src="@drawable/ic_baseline_assignment_late_24"
+        app:backgroundTint="@color/colorPrimaryDark"
         app:tint="@android:color/white" />
 
     <androidx.constraintlayout.widget.ConstraintLayout

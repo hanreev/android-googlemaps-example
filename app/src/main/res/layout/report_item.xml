@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="8dp">
+
+    <ImageView
+        android:id="@+id/report_photo"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="8dp"
+        app:srcCompat="@drawable/ic_launcher_background" />
+
+    <TextView
+        android:id="@+id/lbl_id"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="ID"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/val_id"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="8dp"
+        android:textAlignment="viewEnd" />
+
+    <TextView
+        android:id="@+id/lbl_condition"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="KONDISI"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/val_condition"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="8dp"
+        android:textAlignment="viewEnd" />
+
+    <TextView
+        android:id="@+id/lbl_position"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="POSISI / KOORDINAT"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/val_position"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="8dp"
+        android:textAlignment="viewEnd" />
+
+    <TextView
+        android:id="@+id/lbl_description"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="KETERANGAN"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/val_description"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="8dp"
+        android:textAlignment="viewEnd" />
+
+</LinearLayout>
